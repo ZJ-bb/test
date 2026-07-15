@@ -274,14 +274,35 @@
                     <p class="text-sm text-gray-500 text-center">选择一种挑战模式开始测验</p>
                     <div class="grid grid-cols-1 gap-3">
                         <div v-for="mode in quizModes" :key="mode.id"
-                             @click="startQuizMode(mode.id)"
-                             class="glass-card rounded-2xl p-4 flex items-center gap-4 cursor-pointer btn-press shadow-md pop-in">
-                            <span class="text-4xl">{{ mode.icon }}</span>
-                            <div class="flex-1">
-                                <h3 class="font-bold text-gray-800">{{ mode.name }}</h3>
-                                <p class="text-xs text-gray-500">{{ mode.desc }}</p>
+                             class="glass-card rounded-2xl overflow-hidden shadow-md pop-in">
+                            <div @click="!mode.hasRange ? startQuizMode(mode.id) : showRangePicker(mode)"
+                                 class="p-4 flex items-center gap-4 cursor-pointer btn-press">
+                                <span class="text-4xl">{{ mode.icon }}</span>
+                                <div class="flex-1">
+                                    <h3 class="font-bold text-gray-800">{{ mode.name }}</h3>
+                                    <p class="text-xs text-gray-500">{{ mode.desc }}</p>
+                                </div>
+                                <span v-if="!mode.hasRange" class="text-gray-300 text-xl">→</span>
+                                <span v-else class="text-gray-300 text-xl">⚙️</span>
                             </div>
-                            <span class="text-gray-300 text-xl">→</span>
+                            <!-- 范围选择面板 -->
+                            <transition name="slide-up">
+                                <div v-if="rangePickerMode === mode.id" class="px-4 pb-4">
+                                    <div class="bg-blue-50 rounded-xl p-4">
+                                        <p class="text-xs font-bold text-blue-700 mb-3">📊 选择测验范围</p>
+                                        <div class="grid grid-cols-3 gap-2">
+                                            <button v-for="opt in quizRangeOptions" :key="opt.value"
+                                                    @click="selectRangeAndStart(mode.id, opt.value)"
+                                                    :class="['py-2.5 rounded-xl text-sm font-bold btn-press transition-colors',
+                                                        selectedRange[mode.id] === opt.value
+                                                            ? 'bg-blue-500 text-white shadow-md'
+                                                            : 'bg-white text-gray-600 border border-blue-200 hover:bg-blue-100']">
+                                                {{ opt.label }}
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </transition>
                         </div>
                     </div>
                 </div>
@@ -386,7 +407,7 @@
                         </div>
 
                         <div class="flex gap-3 justify-center flex-wrap">
-                            <button @click="startQuizMode(quizMode)" class="bg-blue-500 text-white px-5 py-2 rounded-full font-bold btn-press">再测一次</button>
+                            <button @click="startQuizMode(quizMode, selectedRange[quizMode])" class="bg-blue-500 text-white px-5 py-2 rounded-full font-bold btn-press">再测一次</button>
                             <button @click="quizMode = null" class="bg-green-500 text-white px-5 py-2 rounded-full font-bold btn-press">换种模式</button>
                             <button @click="currentPage = 'home'" class="bg-gray-200 text-gray-700 px-5 py-2 rounded-full font-bold btn-press">返回首页</button>
                         </div>
@@ -541,12 +562,22 @@ createApp({
             userInput: '',
             showHint: false,
             quizModes: [
-                { id: 'general', name: '综合问答', icon: '🎯', desc: '化学常识选择题，共10题' },
-                { id: 'symbol', name: '符号默写', icon: '✍️', desc: '根据元素名称写出符号，共15题' },
-                { id: 'name', name: '名称默写', icon: '📝', desc: '根据元素符号写出名称，共15题' },
-                { id: 'number', name: '原子序数', icon: '🔢', desc: '写出元素的原子序数，共15题' },
-                { id: 'category', name: '元素分类', icon: '🏷️', desc: '判断元素所属类别，共10题' }
+                { id: 'general', name: '综合问答', icon: '🎯', desc: '化学常识选择题，共10题', hasRange: false },
+                { id: 'symbol', name: '符号默写', icon: '✍️', desc: '根据元素名称写出符号', hasRange: true, defaultRange: 20 },
+                { id: 'name', name: '名称默写', icon: '📝', desc: '根据元素符号写出名称', hasRange: true, defaultRange: 20 },
+                { id: 'number', name: '原子序数', icon: '🔢', desc: '写出元素的原子序数', hasRange: true, defaultRange: 20 },
+                { id: 'category', name: '元素分类', icon: '🏷️', desc: '判断元素所属类别，共10题', hasRange: true, defaultRange: 36 }
             ],
+            quizRangeOptions: [
+                { label: '前10号', value: 10 },
+                { label: '前20号', value: 20 },
+                { label: '前30号', value: 30 },
+                { label: '前36号', value: 36 },
+                { label: '前54号', value: 54 },
+                { label: '全部118号', value: 118 }
+            ],
+            selectedRange: {},
+            rangePickerMode: null,
             // 每日小知识
             dailyFacts: [
                 '水（H₂O）是由氢和氧两种元素组成的，地球上约71%的表面被水覆盖！',
@@ -998,8 +1029,9 @@ createApp({
             this.isCorrect = false;
             this.userInput = '';
             this.showHint = false;
+            this.rangePickerMode = null;
         },
-        startQuizMode(modeId) {
+        startQuizMode(modeId, range) {
             this.quizMode = modeId;
             this.currentQuestion = 0;
             this.score = 0;
@@ -1010,12 +1042,16 @@ createApp({
             this.isCorrect = false;
             this.userInput = '';
             this.showHint = false;
+            this.rangePickerMode = null;
+
+            const r = range || (this.quizModes.find(m => m.id === modeId) || {}).defaultRange || 20;
 
             if (modeId === 'general') {
                 this.currentQuestions = [...this.quizQuestions].sort(() => Math.random() - 0.5);
             } else if (modeId === 'symbol') {
-                const pool = this.elements.filter(e => e.num <= 36);
-                this.currentQuestions = pool.sort(() => Math.random() - 0.5).slice(0, 15).map(el => ({
+                const pool = this.elements.filter(e => e.num <= r);
+                const count = Math.min(pool.length, 15);
+                this.currentQuestions = pool.sort(() => Math.random() - 0.5).slice(0, count).map(el => ({
                     type: 'symbol',
                     question: `「${el.name}」的元素符号是什么？`,
                     subtext: `提示：${el.desc}`,
@@ -1027,8 +1063,9 @@ createApp({
                     explain: `${el.name}(${el.sym})是第${el.num}号元素，属于${el.category}。`
                 }));
             } else if (modeId === 'name') {
-                const pool = this.elements.filter(e => e.num <= 36);
-                this.currentQuestions = pool.sort(() => Math.random() - 0.5).slice(0, 15).map(el => ({
+                const pool = this.elements.filter(e => e.num <= r);
+                const count = Math.min(pool.length, 15);
+                this.currentQuestions = pool.sort(() => Math.random() - 0.5).slice(0, count).map(el => ({
                     type: 'name',
                     question: `「${el.sym}」是什么元素？`,
                     subtext: `英文：${el.enName}`,
@@ -1040,8 +1077,9 @@ createApp({
                     explain: `${el.sym}是${el.name}（${el.enName}），第${el.num}号元素。`
                 }));
             } else if (modeId === 'number') {
-                const pool = this.elements.filter(e => e.num <= 36);
-                this.currentQuestions = pool.sort(() => Math.random() - 0.5).slice(0, 15).map(el => ({
+                const pool = this.elements.filter(e => e.num <= r);
+                const count = Math.min(pool.length, 15);
+                this.currentQuestions = pool.sort(() => Math.random() - 0.5).slice(0, count).map(el => ({
                     type: 'number',
                     question: `「${el.name}(${el.sym})」的原子序数是多少？`,
                     answer: String(el.num),
@@ -1052,9 +1090,10 @@ createApp({
                     explain: `${el.name}(${el.sym})的原子序数是${el.num}，相对原子质量约为${el.mass}。`
                 }));
             } else if (modeId === 'category') {
-                const pool = this.elements.filter(e => e.num <= 54);
-                const cats = ['碱金属', '碱土金属', '过渡金属', '贫金属', '类金属', '非金属', '卤素', '稀有气体'];
-                this.currentQuestions = pool.sort(() => Math.random() - 0.5).slice(0, 10).map(el => {
+                const pool = this.elements.filter(e => e.num <= r);
+                const cats = ['碱金属', '碱土金属', '过渡金属', '贫金属', '类金属', '非金属', '卤素', '稀有气体', '镧系元素', '锕系元素'];
+                const count = Math.min(pool.length, 10);
+                this.currentQuestions = pool.sort(() => Math.random() - 0.5).slice(0, count).map(el => {
                     const wrong = cats.filter(c => c !== el.category).sort(() => Math.random() - 0.5).slice(0, 3);
                     const opts = [...wrong, el.category].sort(() => Math.random() - 0.5);
                     return {
@@ -1067,6 +1106,13 @@ createApp({
                     };
                 });
             }
+        },
+        showRangePicker(mode) {
+            this.rangePickerMode = this.rangePickerMode === mode.id ? null : mode.id;
+        },
+        selectRangeAndStart(modeId, range) {
+            this.selectedRange[modeId] = range;
+            this.startQuizMode(modeId, range);
         },
         answerQuestion(idx) {
             if (this.answered) return;
